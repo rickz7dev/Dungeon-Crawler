@@ -14,16 +14,6 @@
 #define MAX_C         26
 #define MAX_MONSTROS  30
 
-/* -------------------------------------------------------
-   DADOS DO JOGADOR
-   Cada variavel representa uma informacao do jogador.
-   Prefixo "j" indica que pertence ao jogador.
-   jLinha e jColuna -> posicao atual no mapa
-   jVidas           -> quantas vidas restam (comeca com 3)
-   jArma            -> arma equipada: 1=Espada 2=Arco 3=Cajado
-   jDirecao         -> para onde esta olhando: ^ v < >
-   jChaves          -> quantas chaves esta carregando
-*/
 int  jLinha;
 int  jColuna;
 int  jVidas;
@@ -31,29 +21,14 @@ int  jArma;
 char jDirecao;
 int  jChaves;
 
-/* -------------------------------------------------------
-   DADOS DOS MONSTROS
-   Arrays paralelos: o monstro de indice i tem
-   mLinha[i], mColuna[i], mTipo[i] e mVivo[i].
-   mTipo: 1=X aleatorio, 2=Y perseguicao, 3=Z boss
-   mVivo: 1=vivo, 0=morto
-*/
 int mLinha[MAX_MONSTROS];
 int mColuna[MAX_MONSTROS];
 int mTipo[MAX_MONSTROS];
 int mVivo[MAX_MONSTROS];
 int numMonstros = 0;
 
-/* turnosBoss conta quantos turnos o boss ja fez.
-   A cada 5 turnos ele teleporta. */
 int turnosBoss = 0;
 
-/* -------------------------------------------------------
-   MAPAS
-   Cada fase tem dois arrays:
-   - Ativo (mapa__):     sofre alteracoes durante o jogo
-   - Original (mapa__Orig): copia intocada para reiniciar a fase
-*/
 char mapaVila[VILA_L][MAX_C];
 char mapaVilaOrig[VILA_L][MAX_C];
 char mapaA1[A1_L][MAX_C];
@@ -63,30 +38,13 @@ char mapaA2Orig[A2_L][MAX_C];
 char mapaA3[A3_L][MAX_C];
 char mapaA3Orig[A3_L][MAX_C];
 
-/* -------------------------------------------------------
-   CONTROLE DOS BOTOES
-   Variaveis globais que indicam se o botao de cada fase
-   foi pressionado. Evitam o uso de ponteiros.
-*/
 int botaoA2Ativado = 0;
 int botaoA3Ativado = 0;
 
-/* -------------------------------------------------------
-   CELULA DA FRENTE
-   calcularFrente() escreve aqui o resultado.
-   Qualquer funcao pode ler frenteLinha e frenteColuna
-   depois de chamar calcularFrente().
-*/
 int frenteLinha;
 int frenteColuna;
 
-/* -------------------------------------------------------
-   limparTela
-   Apaga o console antes de redesenhar o mapa.
-   Usa "cls" no Windows e "clear" no Linux/Mac.
-   _WIN32 e uma macro automaticamente definida em
-   compiladores Windows.
-*/
+/* limparTela */
 void limparTela() {
 #ifdef _WIN32
     system("cls");
@@ -95,12 +53,7 @@ void limparTela() {
 #endif
 }
 
-/* -------------------------------------------------------
-   pausar
-   Congela a tela e espera o jogador pressionar ENTER.
-   O loop while descarta tudo que sobrou no buffer de
-   entrada antes de esperar o ENTER do usuario.
-*/
+/* pausar */
 void pausar() {
     printf("\n  [Pressione ENTER para continuar...]");
     int c;
@@ -108,22 +61,14 @@ void pausar() {
     getchar();
 }
 
-/* -------------------------------------------------------
-   lerChar
-   Le um unico caractere do teclado.
-   O espaco antes de %c faz o scanf ignorar espacos e
-   quebras de linha que ficaram no buffer.
-*/
+/* lerChar */
 char lerChar() {
     char c;
     scanf(" %c", &c);
     return c;
 }
 
-/* -------------------------------------------------------
-   lerInt
-   Le um numero inteiro e descarta o '\n' do buffer.
-*/
+/* lerInt */
 int lerInt() {
     int n;
     scanf("%d", &n);
@@ -131,13 +76,7 @@ int lerInt() {
     return n;
 }
 
-/* -------------------------------------------------------
-   exibirHUD
-   Mostra o painel de informacoes do jogador acima do mapa.
-   Vidas cheias aparecem como [*] e perdidas como [ ].
-   Primeiro loop: de 0 ate jVidas  -> imprime [*]
-   Segundo loop:  de jVidas ate 3  -> imprime [ ]
-*/
+/* exibirHUD */
 void exibirHUD() {
     int i;
     const char *nomeArma[] = { "---", "Espada", "Arco e Flecha", "Cajado" };
@@ -149,15 +88,7 @@ void exibirHUD() {
     printf("============================================================\n");
 }
 
-/* -------------------------------------------------------
-   exibirMapa
-   Percorre o mapa linha por linha e coluna por coluna,
-   imprimindo cada caractere.
-   O jogador NAO fica salvo no array do mapa. Na hora de
-   imprimir, verificamos se a celula atual e a posicao do
-   jogador: se for, imprimimos jDirecao em vez do char do mapa.
-   Isso evita o problema de "rastro" ao mover o jogador.
-*/
+/* exibirMapa */
 void exibirMapa(char mapa[][MAX_C], int linhas, int colunas) {
     int i, j;
     for (i = 0; i < linhas; i++) {
@@ -173,11 +104,7 @@ void exibirMapa(char mapa[][MAX_C], int linhas, int colunas) {
     printf("\n");
 }
 
-/* -------------------------------------------------------
-   exibirMenu
-   Tela inicial com arte ASCII e as tres opcoes do jogo.
-   Sempre voltamos aqui apos uma partida terminar.
-*/
+/* exibirMenu */
 void exibirMenu() {
     limparTela();
     printf("\n");
@@ -200,11 +127,7 @@ void exibirMenu() {
     printf("  Escolha: ");
 }
 
-/* -------------------------------------------------------
-   exibirTutorial
-   Mostra a historia do jogo, os simbolos do mapa,
-   os controles e as armas disponiveis.
-*/
+/* exibirTutorial */
 void exibirTutorial() {
     limparTela();
     printf("  ============== TUTORIAL ==============\n\n");
@@ -240,11 +163,7 @@ void exibirTutorial() {
     pausar();
 }
 
-/* -------------------------------------------------------
-   exibirGameOver
-   Tela exibida quando o jogador perde todas as vidas.
-   Apos pressionar ENTER, o jogo volta ao menu principal.
-*/
+/* exibirGameOver */
 void exibirGameOver() {
     limparTela();
     printf("\n\n");
@@ -259,11 +178,7 @@ void exibirGameOver() {
     pausar();
 }
 
-/* -------------------------------------------------------
-   exibirVitoria
-   Tela exibida quando o jogador derrota o boss final.
-   Mostra o desfecho narrativo do jogo.
-*/
+/* exibirVitoria */
 void exibirVitoria() {
     limparTela();
     printf("\n\n");
@@ -281,26 +196,12 @@ void exibirVitoria() {
     pausar();
 }
 
-/* -------------------------------------------------------
-   ehObstaculo
-   Recebe um caractere e retorna 1 se ele bloqueia movimento.
-   Parede (*), caixa (k) e porta fechada (D) sao obstaculos.
-   Espinho (#) NAO e obstaculo: o jogador entra na celula,
-   mas perde uma vida depois de entrar.
-   O operador || significa OU: basta uma condicao ser
-   verdadeira para a funcao retornar 1.
-*/
+/* ehObstaculo */
 int ehObstaculo(char celula) {
     return (celula == '*' || celula == 'k' || celula == 'D');
 }
 
-/* -------------------------------------------------------
-   temMonstroEm
-   Percorre o array de monstros e retorna 1 se houver
-   algum monstro VIVO na posicao (l, c).
-   Usa os arrays paralelos mLinha[] e mColuna[] para
-   verificar a posicao de cada monstro pelo indice i.
-*/
+/* temMonstroEm */
 int temMonstroEm(int l, int c) {
     int i;
     for (i = 0; i < numMonstros; i++)
@@ -309,14 +210,7 @@ int temMonstroEm(int l, int c) {
     return 0;
 }
 
-/* -------------------------------------------------------
-   calcularFrente
-   Calcula qual celula esta diretamente a frente do jogador
-   com base em jDirecao e salva o resultado nas variaveis
-   globais frenteLinha e frenteColuna.
-   Exemplo: jogador em (3,5) olhando para cima (^)
-   -> frenteLinha = 2, frenteColuna = 5
-*/
+/* calcularFrente */
 void calcularFrente() {
     frenteLinha  = jLinha;
     frenteColuna = jColuna;
@@ -326,24 +220,7 @@ void calcularFrente() {
     else if (jDirecao == '>') frenteColuna++;
 }
 
-/* -------------------------------------------------------
-   moverJogador
-   Tenta mover o jogador na direcao indicada.
-   dl e dc sao os deslocamentos de linha e coluna.
-   Exemplo: mover para cima = dl=-1, dc=0.
-   Retorna:
-     0 -> movimento normal ou bloqueado por obstaculo
-     1 -> jogador morreu (espinho ou monstro)
-     2 -> jogador chegou na escada (avanca de fase)
-   Fluxo:
-     1. Atualiza jDirecao
-     2. Calcula nova posicao
-     3. Checa limites do mapa
-     4. Checa obstaculo solido
-     5. Checa monstro na celula destino
-     6. Move o jogador
-     7. Checa espinho, chave ou escada
-*/
+/* moverJogador */
 int moverJogador(char mapa[][MAX_C], int linhas, int colunas,
                  int dl, int dc, char dir) {
     jDirecao = dir;
@@ -386,16 +263,7 @@ int moverJogador(char mapa[][MAX_C], int linhas, int colunas,
     return 0;
 }
 
-/* -------------------------------------------------------
-   interagirComMapa
-   Executa a acao 'i': interagir com o objeto a frente.
-   Chama calcularFrente() para saber qual celula checar.
-   D (porta fechada) -> abre se tiver chave
-   O (botao)         -> ativa a variavel global da fase
-   N (NPC)           -> retorna 1 para indicar dialogo
-   O parametro fase indica em qual andar estamos, para
-   saber qual variavel de botao (botaoA2 ou botaoA3) ativar.
-*/
+/* interagirComMapa */
 int interagirComMapa(char mapa[][MAX_C], int linhas, int colunas, int fase) {
     calcularFrente();
     int fl = frenteLinha;
@@ -428,18 +296,7 @@ int interagirComMapa(char mapa[][MAX_C], int linhas, int colunas, int fase) {
     return 0;
 }
 
-/* -------------------------------------------------------
-   atacar
-   Executa o ataque 'o' conforme a arma equipada (jArma).
-   Calcula as celulas atingidas e armazena em alvos[][2].
-   Para cada celula atingida: destroi caixa ou elimina monstro.
-   ESPADA (1): bloco 3x2 a frente — dois loops aninhados
-               geram as 6 celulas conforme a direcao.
-   ARCO   (2): 4 celulas em linha reta — vetor de direcao
-               multiplicado por distancia 1 a 4.
-   CAJADO (3): 8 celulas ao redor — array de 8 offsets
-               cobrindo ortogonais e diagonais.
-*/
+/* atacar */
 void atacar(char mapa[][MAX_C], int linhas, int colunas) {
     int alvos[12][2];
     int numAlvos = 0;
@@ -533,19 +390,7 @@ void atacar(char mapa[][MAX_C], int linhas, int colunas) {
         printf("\n  [!] Ataque no vazio...\n");
 }
 
-/* -------------------------------------------------------
-   moverMonstros
-   Move todos os monstros vivos e verifica colisao com jogador.
-   TIPO 1 (X): rand() % 4 escolhe direcao aleatoria (0 a 3).
-   TIPO 2 (Y): calcula dL e dC (diferenca de posicao com
-               o jogador) e avanca na direcao de maior distancia.
-   TIPO 3 (Z): perseguicao normal na maioria dos turnos.
-               A cada 5 turnos teleporta para posicao aleatoria
-               no raio 3 do jogador, forcando reacao rapida.
-   Apos calcular nova posicao, so move se a celula estiver
-   livre (espaco vazio e sem outro monstro).
-   Retorna 1 se houve colisao com o jogador.
-*/
+/* moverMonstros */
 int moverMonstros(char mapa[][MAX_C], int linhas, int colunas) {
     int m;
     for (m = 0; m < numMonstros; m++) {
@@ -620,10 +465,7 @@ int moverMonstros(char mapa[][MAX_C], int linhas, int colunas) {
     return 0;
 }
 
-/* -------------------------------------------------------
-   contarMonstrosVivos
-   Percorre mVivo[] e retorna quantos monstros tem vivo=1.
-*/
+/* contarMonstrosVivos */
 int contarMonstrosVivos() {
     int total = 0, i;
     for (i = 0; i < numMonstros; i++)
@@ -631,11 +473,7 @@ int contarMonstrosVivos() {
     return total;
 }
 
-/* -------------------------------------------------------
-   bossEstaVivo
-   Retorna 1 se o monstro de tipo 3 (boss) ainda esta vivo.
-   Usado no Andar 3 para checar a condicao de vitoria.
-*/
+/* bossEstaVivo */
 int bossEstaVivo() {
     int i;
     for (i = 0; i < numMonstros; i++)
@@ -644,16 +482,7 @@ int bossEstaVivo() {
     return 0;
 }
 
-/* -------------------------------------------------------
-   escanearMonstros
-   Varre o mapa procurando X, Y e Z.
-   Para cada simbolo encontrado:
-     1. Registra nos arrays paralelos mLinha, mColuna, mTipo, mVivo
-     2. Remove o caractere do mapa (substitui por espaco)
-   Os monstros sao gerenciados pelos arrays, nao pelo mapa.
-   desenharMonstros e limparMonstrosDoMapa os inserem e
-   removem temporariamente apenas na hora de imprimir.
-*/
+/* escanearMonstros */
 void escanearMonstros(char mapa[][MAX_C], int linhas, int colunas) {
     int i, j;
     numMonstros = 0;
@@ -673,11 +502,7 @@ void escanearMonstros(char mapa[][MAX_C], int linhas, int colunas) {
     }
 }
 
-/* -------------------------------------------------------
-   desenharMonstros
-   Insere os simbolos dos monstros vivos no array do mapa.
-   Chamada ANTES de exibirMapa para que aparecam na tela.
-*/
+/* desenharMonstros */
 void desenharMonstros(char mapa[][MAX_C]) {
     int m;
     for (m = 0; m < numMonstros; m++) {
@@ -687,11 +512,7 @@ void desenharMonstros(char mapa[][MAX_C]) {
     }
 }
 
-/* -------------------------------------------------------
-   limparMonstrosDoMapa
-   Remove os simbolos dos monstros do array do mapa.
-   Chamada DEPOIS de exibirMapa para nao corromper o mapa base.
-*/
+/* limparMonstrosDoMapa */
 void limparMonstrosDoMapa(char mapa[][MAX_C]) {
     int m;
     for (m = 0; m < numMonstros; m++) {
@@ -700,14 +521,7 @@ void limparMonstrosDoMapa(char mapa[][MAX_C]) {
     }
 }
 
-/* -------------------------------------------------------
-   inicializarVila
-   Define o layout da Vila (10x10) usando strings literais.
-   strncpy copia cada linha para o array ativo e para o
-   original (backup). Posiciona o jogador em (1,1).
-   Contem NPC (N) para escolha de arma e escada (L)
-   que leva para o Andar 1.
-*/
+/* inicializarVila */
 void inicializarVila() {
     int i;
     const char *t[VILA_L] = {
@@ -734,14 +548,7 @@ void inicializarVila() {
     jChaves  = 0;
 }
 
-/* -------------------------------------------------------
-   inicializarAndar1
-   Define o layout do Andar 1 (10x10).
-   Tutorial de mecanicas basicas:
-   - Chave (@) e porta (D): ensina a abrir portas
-   - Caixas (k): ensina a destruir com ataque
-   - Escada (L): so acessivel apos abrir a porta
-*/
+/* inicializarAndar1 */
 void inicializarAndar1() {
     int i;
     const char *t[A1_L] = {
@@ -764,12 +571,7 @@ void inicializarAndar1() {
     }
 }
 
-/* -------------------------------------------------------
-   inicializarAndar2
-   Define o layout do Andar 2 (15x15).
-   Apresenta espinhos (#), botao (O) e Monstros Tipo 1 (X).
-   2 chaves e 2 portas. O botao abre uma passagem central.
-*/
+/* inicializarAndar2 */
 void inicializarAndar2() {
     int i;
     const char *t[A2_L] = {
@@ -797,13 +599,7 @@ void inicializarAndar2() {
     }
 }
 
-/* -------------------------------------------------------
-   inicializarAndar3
-   Define o layout do Andar 3 (25x25).
-   Desafio final com todos os elementos integrados:
-   3 chaves, 3 portas, espinhos, caixas, monstros Y,
-   Boss Z e botao que invoca monstros extras.
-*/
+/* inicializarAndar3 */
 void inicializarAndar3() {
     int i;
     const char *t[A3_L] = {
@@ -841,13 +637,7 @@ void inicializarAndar3() {
     }
 }
 
-/* -------------------------------------------------------
-   reiniciarFase
-   Restaura o mapa ao estado original e reposiciona o jogador.
-   Chamada sempre que o jogador perde uma vida.
-   strncpy copia cada linha do backup (orig) de volta para
-   o mapa ativo, desfazendo todas as alteracoes da tentativa.
-*/
+/* reiniciarFase */
 void reiniciarFase(char mapa[][MAX_C], char orig[][MAX_C],
                    int linhas, int colunas, int lIni, int cIni) {
     int i;
@@ -860,14 +650,7 @@ void reiniciarFase(char mapa[][MAX_C], char orig[][MAX_C],
     escanearMonstros(mapa, linhas, colunas);
 }
 
-/* -------------------------------------------------------
-   aplicarEfeitoBotao
-   Executa o efeito do botao da fase indicada pelo parametro fase.
-   Fase 2: remove paredes centrais abrindo uma passagem secreta.
-   Fase 3: adiciona dois monstros Tipo 2 extras nos arrays,
-           aumentando o perigo na arena do boss.
-   Usa if (fase == X) em vez de ponteiro de funcao.
-*/
+/* aplicarEfeitoBotao */
 void aplicarEfeitoBotao(char mapa[][MAX_C], int fase) {
     if (fase == 2) {
         if (mapa[7][7] == '*') mapa[7][7] = ' ';
@@ -891,12 +674,7 @@ void aplicarEfeitoBotao(char mapa[][MAX_C], int fase) {
     }
 }
 
-/* -------------------------------------------------------
-   escolherArma
-   Menu de selecao de arma exibido ao interagir com o NPC.
-   Loop while garante que so aceita entrada valida (1, 2 ou 3).
-   Salva a escolha em jArma que persiste por toda a partida.
-*/
+/* escolherArma */
 void escolherArma() {
     limparTela();
     printf("  ===== FERREIRO DA VILA =====\n\n");
@@ -919,13 +697,7 @@ void escolherArma() {
     pausar();
 }
 
-/* -------------------------------------------------------
-   faseVila
-   Loop da Vila. Sem monstros.
-   O jogador precisa falar com o NPC (N) para escolher a arma
-   antes de poder entrar na masmorra pela escada (L).
-   Se tentar entrar sem arma, o jogo bloqueia e avisa.
-*/
+/* faseVila */
 void faseVila() {
     inicializarVila();
     while (1) {
@@ -979,24 +751,7 @@ void faseVila() {
     }
 }
 
-/* -------------------------------------------------------
-   loopFase
-   Loop principal de uma fase de masmorra.
-   Roda indefinidamente ate uma de tres condicoes:
-     Retorna 0: jogador ficou sem vidas (Game Over)
-     Retorna 1: chegou na escada (proxima fase)
-     Retorna 2: boss derrotado (vitoria, so Andar 3)
-   A cada iteracao:
-     1. Checa vitoria (boss morto)
-     2. Aplica efeito do botao se ainda nao aplicado
-     3. Exibe HUD e mapa
-     4. Le comando do jogador
-     5. Executa movimento, interacao ou ataque
-     6. Move os monstros
-     7. Se perdeu vida: reinicia fase ou retorna Game Over
-   O parametro fase (1, 2 ou 3) identifica o andar atual
-   para controle do botao e do boss.
-*/
+/* loopFase */
 int loopFase(char mapa[][MAX_C], char orig[][MAX_C],
              int linhas, int cols,
              int lIni, int cIni,
@@ -1101,16 +856,7 @@ int loopFase(char mapa[][MAX_C], char orig[][MAX_C],
     }
 }
 
-/* -------------------------------------------------------
-   main
-   Ponto de entrada do programa.
-   srand(time(NULL)) inicializa o gerador de numeros
-   aleatorios com o horario atual como semente, garantindo
-   sequencias diferentes a cada execucao.
-   Loop infinito do menu: so termina com "Sair" (break).
-   Opcao 1: inicializa o jogador e executa as fases em sequencia.
-   Cada loopFase retorna 0 (Game Over) ou 1/2 (continua).
-*/
+/* main */
 int main() {
     srand((unsigned int)time(NULL));
 
@@ -1165,4 +911,3 @@ int main() {
 
     return 0;
 }
-
