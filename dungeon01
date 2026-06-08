@@ -1,0 +1,1425 @@
+/*
+===========================================================
+  DUNGEON CRAWLER - Jogo de console em linguagem C
+  Genero: Dungeon Crawler top-down com ASCII
+===========================================================
+
+  COMO O CODIGO ESTA ORGANIZADO:
+  --------------------------------
+  [1] Includes e defines (constantes)
+  [2] Variaveis globais (mapas, jogador, monstros)
+  [3] Funcoes utilitarias
+  [4] Funcoes de exibicao
+  [5] Funcoes de logica do jogo
+  [6] Funcoes de inicializacao dos mapas
+  [7] Funcoes de cada fase
+  [8] main()
+*/
+
+/* ===========================================================
+   [1] INCLUDES E DEFINES
+   ===========================================================
+
+   #include carrega bibliotecas prontas do C:
+     stdio.h  -> printf(), scanf(), getchar()
+     stdlib.h -> rand(), srand(), system(), abs()
+     string.h -> strncpy()
+     time.h   -> time() para gerar numeros aleatorios diferentes
+
+   #define cria um apelido para um valor constante.
+   Exemplo: toda vez que o compilador ver "VILA_L", ele substitui por 10.
+   Isso facilita mudar o tamanho do mapa em um unico lugar.
+*/
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+/* Dimensoes dos mapas de cada fase */
+#define VILA_L        10
+#define VILA_C        10
+#define A1_L          10
+#define A1_C          10
+#define A2_L          15
+#define A2_C          15
+#define A3_L          25
+#define A3_C          25
+
+/* MAX_C e o numero de colunas do maior mapa + 1 (para o '\0' do strncpy).
+   Usamos como segundo tamanho nos arrays 2D para que o tipo
+   seja compativel entre todas as funcoes. */
+#define MAX_C         26
+
+/* Numero maximo de monstros que podem existir simultaneamente */
+#define MAX_MONSTROS  30
+
+/* ===========================================================
+   [2] VARIAVEIS GLOBAIS
+   ===========================================================
+
+   Variaveis globais ficam fora de qualquer funcao.
+   Elas existem durante toda a execucao e sao acessiveis
+   por TODAS as funcoes do programa.
+
+   POR QUE USAR VARIAVEIS GLOBAIS AQUI?
+   O estado do jogo (posicao do jogador, vidas, monstros)
+   precisa ser lido e modificado por muitas funcoes diferentes.
+   Sem variaveis globais, teriamos que passar dezenas de
+   parametros em cada chamada de funcao.
+
+   SEM STRUCTS — cada dado e uma variavel separada:
+   Em vez de  jogador.linha  usamos  jLinha
+   Em vez de  jogador.vidas  usamos  jVidas
+   E assim por diante para cada campo.
+
+   DADOS DO JOGADOR (prefixo j):
+*/
+int  jLinha;      /* Linha atual do jogador no mapa           */
+int  jColuna;     /* Coluna atual do jogador no mapa          */
+int  jVidas;      /* Vidas restantes (comeca com 3)           */
+int  jArma;       /* Arma equipada: 1=Espada 2=Arco 3=Cajado  */
+char jDirecao;    /* Direcao: '^' cima 'v' baixo '<' esq '>' */
+int  jChaves;     /* Quantas chaves o jogador carrega         */
+
+/*
+   DADOS DOS MONSTROS (arrays paralelos):
+
+   Em vez de um array de structs (monstros[i].linha),
+   usamos ARRAYS SEPARADOS que caminham juntos pelo indice.
+   O monstro de indice i tem:
+     mLinha[i]  -> linha no mapa
+     mColuna[i] -> coluna no mapa
+     mTipo[i]   -> 1=X aleatorio, 2=Y perseguicao, 3=Z boss
+     mVivo[i]   -> 1=vivo, 0=morto
+
+   Exemplo: para acessar o segundo monstro usamos
+     mLinha[1], mColuna[1], mTipo[1], mVivo[1]
+*/
+int mLinha[MAX_MONSTROS];
+int mColuna[MAX_MONSTROS];
+int mTipo[MAX_MONSTROS];
+int mVivo[MAX_MONSTROS];
+int numMonstros = 0;   /* Quantos monstros existem na fase atual */
+
+/* Contador de turnos do boss (para o comportamento de teleporte) */
+int turnosBoss = 0;
+
+/*
+   MAPAS:
+   Cada fase tem dois arrays 2D de char:
+     - O mapa ATIVO: sofre alteracoes durante o jogo
+       (chave some, caixa destruida, porta abre...)
+     - O mapa ORIGINAL: copia intocada usada para
+       REINICIAR a fase quando o jogador perde uma vida
+
+   Um array 2D de char e essencialmente uma grade de celulas,
+   onde cada celula e um caractere ASCII representando
+   parede, chao, item, etc.
+*/
+char mapaVila[VILA_L][MAX_C];
+char mapaVilaOrig[VILA_L][MAX_C];
+
+char mapaA1[A1_L][MAX_C];
+char mapaA1Orig[A1_L][MAX_C];
+
+char mapaA2[A2_L][MAX_C];
+char mapaA2Orig[A2_L][MAX_C];
+
+char mapaA3[A3_L][MAX_C];
+char mapaA3Orig[A3_L][MAX_C];
+
+/* ===========================================================
+   [3] FUNCOES UTILITARIAS
+   ===========================================================
+
+   Funcoes pequenas sem logica de jogo, usadas como
+   ferramentas em varios lugares do codigo.
+*/
+
+/* -------------------------------------------------------
+   limparTela()
+   Apaga o console antes de redesenhar o mapa.
+   _WIN32 e uma macro automaticamente definida em compiladores
+   Windows. Assim o codigo funciona em qualquer sistema.
+*/
+void limparTela() {
+#ifdef _WIN32
+    system("cls");
+#else
+    system("clear");
+#endif
+}
+
+/* -------------------------------------------------------
+   pausar()
+   Congela a tela e espera o jogador pressionar ENTER.
+   Util para que o jogador leia mensagens antes de continuar.
+
+   O loop "while (c != '\n')" descarta tudo que estiver
+   sobrando no buffer de entrada (ex: o '\n' deixado por
+   um scanf() anterior), evitando que o programa pule
+   a pausa automaticamente.
+*/
+void pausar() {
+    printf("\n  [Pressione ENTER para continuar...]");
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+    getchar();
+}
+
+/* -------------------------------------------------------
+   lerChar()
+   Le um unico caractere do teclado.
+   O espaco antes de %c faz o scanf ignorar espacos e
+   quebras de linha que ficaram no buffer.
+*/
+char lerChar() {
+    char c;
+    scanf(" %c", &c);
+    return c;
+}
+
+/* -------------------------------------------------------
+   lerInt()
+   Le um numero inteiro e limpa o '\n' do buffer em seguida.
+*/
+int lerInt() {
+    int n;
+    scanf("%d", &n);
+    while (getchar() != '\n');
+    return n;
+}
+
+/* ===========================================================
+   [4] FUNCOES DE EXIBICAO
+   ===========================================================
+
+   Responsaveis por mostrar o estado do jogo na tela.
+*/
+
+/* -------------------------------------------------------
+   exibirHUD()
+   HUD (Heads-Up Display) e o painel de informacoes do jogador.
+   Aparece acima do mapa em toda iteracao do loop de jogo.
+
+   Vidas cheias sao mostradas como [*] e perdidas como [ ].
+   Exemplo com 2 vidas: [*] [*] [ ]
+
+   Como fazemos isso:
+     - Primeiro loop: de 0 ate jVidas  -> imprime [*]
+     - Segundo loop:  de jVidas ate 3  -> imprime [ ]
+*/
+void exibirHUD() {
+    /* Array de strings para traduzir o numero da arma em nome */
+    const char *nomeArma[] = { "---", "Espada", "Arco e Flecha", "Cajado" };
+
+    printf("============================================================\n");
+    printf("  VIDAS: ");
+    int i;
+    for (i = 0; i < jVidas; i++)  printf("[*] ");
+    for (i = jVidas; i < 3; i++)  printf("[ ] ");
+    printf("  |  ARMA: %s  |  CHAVES: %d\n", nomeArma[jArma], jChaves);
+    printf("============================================================\n");
+}
+
+/* -------------------------------------------------------
+   exibirMapa()
+   Percorre o mapa linha por linha, coluna por coluna,
+   imprimindo cada caractere.
+
+   TRUQUE IMPORTANTE — o jogador nao fica salvo no mapa:
+   O array do mapa contem apenas o "chao" (paredes, itens,
+   portas, etc.). Na hora de imprimir, verificamos se a
+   posicao atual e a do jogador: se for, imprimimos jDirecao
+   em vez do char do mapa.
+
+   Isso resolve o problema de "apagar" o jogador do mapa
+   ao se mover — simplesmente ele nunca esta salvo la.
+
+   Parametros:
+     mapa    -> o array 2D a ser impresso
+     linhas  -> quantas linhas tem o mapa
+     colunas -> quantas colunas tem o mapa
+*/
+void exibirMapa(char mapa[][MAX_C], int linhas, int colunas) {
+    int i, j;
+    for (i = 0; i < linhas; i++) {
+        printf("  ");
+        for (j = 0; j < colunas; j++) {
+            if (i == jLinha && j == jColuna)
+                printf("%c", jDirecao);   /* Posicao do jogador */
+            else
+                printf("%c", mapa[i][j]); /* Celula normal do mapa */
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
+/* -------------------------------------------------------
+   exibirMenu()
+   Tela inicial. Sempre voltamos aqui apos uma partida.
+*/
+void exibirMenu() {
+    limparTela();
+    printf("\n");
+    printf("  =====================================================\n");
+    printf("   ____  _   _ _   _  ____ _____ ___  _   _ \n");
+    printf("  |  _ \\| | | | \\ | |/ ___| ____/ _ \\| \\ | |\n");
+    printf("  | | | | | | |  \\| | |  _|  _|| | | |  \\| |\n");
+    printf("  | |_| | |_| | |\\  | |_| | |__| |_| | |\\  |\n");
+    printf("  |____/ \\___/|_| \\_|\\____|_____\\___/|_| \\_|\n");
+    printf("   ____ ____      ___        ____  _     _____ ____  \n");
+    printf("  / ___|  _ \\ __ / \\ \\      / /  \\| |   | ____|  _ \\ \n");
+    printf(" | |   | |_) / _` \\ \\ \\ /\\ / /| . ` |   |  _| | |_) |\n");
+    printf(" | |___|  _ < (_| |\\ V  V / | |\\  |   | |___|  _ < \n");
+    printf("  \\____|_| \\_\\__,_| \\_/\\_/  |_| \\_|   |_____|_| \\_\\\n");
+    printf("\n");
+    printf("  =====================================================\n\n");
+    printf("     1. Jogar\n");
+    printf("     2. Tutorial\n");
+    printf("     3. Sair\n\n");
+    printf("  Escolha: ");
+}
+
+/* -------------------------------------------------------
+   exibirTutorial()
+   Historia, simbolos e controles do jogo.
+*/
+void exibirTutorial() {
+    limparTela();
+    printf("  ============== TUTORIAL ==============\n\n");
+    printf("  HISTORIA:\n");
+    printf("  O reino de Arendor foi consumido pelas trevas.\n");
+    printf("  O guerreiro Kael deve penetrar na Masmorra das Sombras,\n");
+    printf("  vencer tres andares de terror e destruir o Boss Malachar.\n\n");
+
+    printf("  SIMBOLOS:\n");
+    printf("    > < ^ v  Jogador (direcao que esta olhando)\n");
+    printf("    *        Parede  (intransponivel)\n");
+    printf("    #        Espinho (voce morre ao pisar)\n");
+    printf("    k        Caixa   (bloqueia, mas e destruivel com ataque)\n");
+    printf("    O        Botao   (interaja com 'i' para ativar)\n");
+    printf("    D        Porta fechada (abra com chave usando 'i')\n");
+    printf("    @        Chave   (coletada ao passar por cima)\n");
+    printf("    =        Porta aberta  (pode passar)\n");
+    printf("    L        Escada  (avanca para o proximo andar)\n");
+    printf("    N        NPC     (interaja com 'i' para escolher arma)\n");
+    printf("    X        Monstro Tipo 1 - movimento aleatorio\n");
+    printf("    Y        Monstro Tipo 2 - persegue o jogador\n");
+    printf("    Z        Boss Final\n\n");
+
+    printf("  CONTROLES:\n");
+    printf("    w  Mover para CIMA\n");
+    printf("    s  Mover para BAIXO\n");
+    printf("    a  Mover para ESQUERDA\n");
+    printf("    d  Mover para DIREITA\n");
+    printf("    i  INTERAGIR (porta, botao, NPC)\n");
+    printf("    o  ATACAR na celula a frente\n\n");
+
+    printf("  ARMAS:\n");
+    printf("    Espada       -> bloco 3x2 a frente\n");
+    printf("    Arco e Flecha-> 4 celulas em linha reta\n");
+    printf("    Cajado       -> 8 celulas ao redor\n\n");
+    pausar();
+}
+
+/* -------------------------------------------------------
+   exibirGameOver() e exibirVitoria()
+   Telas de fim de jogo.
+*/
+void exibirGameOver() {
+    limparTela();
+    printf("\n\n");
+    printf("  +------------------------------------------+\n");
+    printf("  |                                          |\n");
+    printf("  |          G A M E   O V E R               |\n");
+    printf("  |                                          |\n");
+    printf("  |  Kael sucumbiu as sombras de Arendor.   |\n");
+    printf("  |  O reino foi perdido para as trevas...  |\n");
+    printf("  |                                          |\n");
+    printf("  +------------------------------------------+\n\n");
+    pausar();
+}
+
+void exibirVitoria() {
+    limparTela();
+    printf("\n\n");
+    printf("  +------------------------------------------+\n");
+    printf("  |                                          |\n");
+    printf("  |          V I T O R I A  !                |\n");
+    printf("  |                                          |\n");
+    printf("  |  Malachar foi destruido!                 |\n");
+    printf("  |  A escuridao se dissipou sobre Arendor.  |\n");
+    printf("  |  Kael voltou como heroi eterno do reino. |\n");
+    printf("  |                                          |\n");
+    printf("  |  Obrigado por jogar DUNGEON CRAWLER!     |\n");
+    printf("  |                                          |\n");
+    printf("  +------------------------------------------+\n\n");
+    pausar();
+}
+
+/* ===========================================================
+   [5] FUNCOES DE LOGICA DO JOGO
+   ===========================================================
+
+   Implementam as regras: movimento, ataque, interacao,
+   comportamento dos monstros.
+*/
+
+/* -------------------------------------------------------
+   ehObstaculo()
+   Recebe um caractere e retorna 1 se ele bloqueia movimento.
+
+   Parede (*), caixa (k) e porta fechada (D) sao obstaculos.
+   Espinho (#) NAO e obstaculo: o jogador entra, mas perde vida.
+   Porta aberta (=) e chao livre (espaco) permitem passagem.
+*/
+int ehObstaculo(char celula) {
+    return (celula == '*' || celula == 'k' || celula == 'D');
+}
+
+/* -------------------------------------------------------
+   temMonstroEm()
+   Percorre o array de monstros e retorna 1 se houver
+   algum monstro VIVO na posicao (l, c).
+
+   Usamos os arrays paralelos mLinha[] e mColuna[]
+   para verificar a posicao de cada monstro.
+*/
+int temMonstroEm(int l, int c) {
+    int i;
+    for (i = 0; i < numMonstros; i++) {
+        if (mVivo[i] && mLinha[i] == l && mColuna[i] == c)
+            return 1;
+    }
+    return 0;
+}
+
+/* -------------------------------------------------------
+   celulaDaFrente()
+   Calcula qual celula esta diretamente a frente do jogador,
+   baseando-se em jDirecao.
+
+   Usamos ponteiros (*fl, *fc) para "retornar" dois valores
+   ao mesmo tempo. O chamador passa os enderecos das variaveis
+   onde quer que os resultados sejam escritos.
+
+   Exemplo de uso:
+     int fl, fc;
+     celulaDaFrente(&fl, &fc);
+     // agora fl e fc tem as coordenadas da celula a frente
+*/
+void celulaDaFrente(int *fl, int *fc) {
+    *fl = jLinha;
+    *fc = jColuna;
+
+    if      (jDirecao == '^') (*fl)--;
+    else if (jDirecao == 'v') (*fl)++;
+    else if (jDirecao == '<') (*fc)--;
+    else if (jDirecao == '>') (*fc)++;
+}
+
+/* -------------------------------------------------------
+   moverJogador()
+   Tenta mover o jogador na direcao indicada.
+
+   Parametros:
+     mapa          -> mapa ativo da fase
+     linhas, colunas -> dimensoes do mapa
+     dl, dc        -> deslocamento de linha e coluna
+                      Ex: mover para cima: dl=-1, dc=0
+     dir           -> novo caractere de direcao
+
+   Retorna:
+     0 -> movimento normal (ou bloqueado)
+     1 -> jogador morreu (espinho ou monstro)
+     2 -> jogador chegou na escada (avanca fase)
+
+   FLUXO DE DECISAO:
+     1. Atualiza jDirecao (sempre, mesmo sem mover)
+     2. Calcula nova posicao
+     3. Se fora dos limites -> nao move (retorna 0)
+     4. Se obstaculo solido -> nao move (retorna 0)
+     5. Se monstro na celula -> perde vida (retorna 1)
+     6. Move o jogador
+     7. Se espinho -> perde vida (retorna 1)
+     8. Se chave -> coleta automaticamente
+     9. Se escada -> retorna 2
+*/
+int moverJogador(char mapa[][MAX_C], int linhas, int colunas,
+                 int dl, int dc, char dir) {
+
+    jDirecao = dir; /* Atualiza direcao mesmo sem mover */
+
+    int novaL = jLinha + dl;
+    int novaC = jColuna + dc;
+
+    /* Verifica se a nova posicao esta dentro do mapa */
+    if (novaL < 0 || novaL >= linhas || novaC < 0 || novaC >= colunas)
+        return 0;
+
+    char dest = mapa[novaL][novaC];
+
+    /* Obstaculo solido: nao permite entrada */
+    if (ehObstaculo(dest))
+        return 0;
+
+    /* Monstro na celula destino: perde vida antes de entrar */
+    if (temMonstroEm(novaL, novaC)) {
+        jVidas--;
+        printf("\n  [!!] Voce colidiu com um monstro! Vidas: %d\n", jVidas);
+        return 1;
+    }
+
+    /* Tudo certo: move o jogador */
+    jLinha  = novaL;
+    jColuna = novaC;
+
+    /* Espinho: ja entrou na celula, agora perde a vida */
+    if (dest == '#') {
+        jVidas--;
+        printf("\n  [!!] Voce pisou num espinho! Vidas: %d\n", jVidas);
+        return 1;
+    }
+
+    /* Chave: coleta e remove do mapa */
+    if (dest == '@') {
+        jChaves++;
+        mapa[novaL][novaC] = ' ';
+        printf("\n  [+] Chave coletada! Total: %d\n", jChaves);
+    }
+
+    /* Escada: sinaliza avanco de fase */
+    if (dest == 'L')
+        return 2;
+
+    return 0;
+}
+
+/* -------------------------------------------------------
+   interagir()
+   Executa a acao 'i' — interagir com o objeto a frente.
+
+   Verifica o que ha na celula a frente de jDirecao e age:
+     D (porta fechada) -> abre se tiver chave
+     O (botao)         -> ativa e seta *botaoAtivado = 1
+     N (NPC)           -> retorna 1 para indicar dialogo
+
+   O parametro botaoAtivado e um PONTEIRO para int.
+   Isso permite que esta funcao modifique a variavel
+   que esta no escopo da funcao chamadora (loopFase).
+   Sem ponteiro, a modificacao seria descartada ao retornar.
+*/
+int interagir(char mapa[][MAX_C], int linhas, int colunas,
+              int *botaoAtivado) {
+
+    int fl, fc;
+    celulaDaFrente(&fl, &fc);
+
+    /* Celula fora do mapa: nada para fazer */
+    if (fl < 0 || fl >= linhas || fc < 0 || fc >= colunas)
+        return 0;
+
+    char alvo = mapa[fl][fc];
+
+    if (alvo == 'D') {
+        if (jChaves > 0) {
+            mapa[fl][fc] = '=';  /* Abre a porta */
+            jChaves--;
+            printf("\n  [+] Porta aberta!\n");
+        } else {
+            printf("\n  [!] Voce precisa de uma chave!\n");
+        }
+    } else if (alvo == 'O') {
+        mapa[fl][fc] = 'o';      /* Marca como ja pressionado */
+        *botaoAtivado = 1;
+        printf("\n  [!] *CLIQUE* Botao pressionado!\n");
+    } else if (alvo == 'N') {
+        return 1;                /* Sinaliza: falar com NPC */
+    } else {
+        printf("\n  [!] Nada para interagir aqui.\n");
+    }
+
+    return 0;
+}
+
+/* -------------------------------------------------------
+   atacar()
+   Executa o ataque 'o' conforme a arma equipada (jArma).
+
+   Para cada arma, calculamos um conjunto de celulas
+   que serao atingidas e guardamos em alvos[][2].
+   Depois percorremos esse conjunto e eliminamos
+   caixas e monstros.
+
+   -------
+   ESPADA (jArma == 1): bloco 3x2 a frente
+     Olhando para cima (^):
+       [z][z][z]   <- 2 linhas acima
+       [z][z][z]   <- 1 linha acima
+         [^]
+
+     Para as 4 direcoes usamos loops duplos com
+     sinais diferentes de dl e dc.
+
+   -------
+   ARCO (jArma == 2): 4 celulas em linha reta
+     Criamos um vetor (dl, dc) apontando na direcao
+     do jogador e multiplicamos por 1, 2, 3, 4.
+
+   -------
+   CAJADO (jArma == 3): 8 celulas ao redor
+     Usamos um array de 8 pares de offsets cobrindo
+     todas as direcoes incluindo diagonais.
+*/
+void atacar(char mapa[][MAX_C], int linhas, int colunas) {
+
+    int alvos[12][2];  /* Maximo de 12 celulas atingidas */
+    int numAlvos = 0;
+    int l = jLinha;
+    int c = jColuna;
+    int dl, dc, dist, k;
+
+    /* === ESPADA: bloco 3x2 === */
+    if (jArma == 1) {
+        if (jDirecao == '^') {
+            for (dl = -1; dl >= -2; dl--)
+                for (dc = -1; dc <= 1; dc++) {
+                    alvos[numAlvos][0] = l + dl;
+                    alvos[numAlvos][1] = c + dc;
+                    numAlvos++;
+                }
+        } else if (jDirecao == 'v') {
+            for (dl = 1; dl <= 2; dl++)
+                for (dc = -1; dc <= 1; dc++) {
+                    alvos[numAlvos][0] = l + dl;
+                    alvos[numAlvos][1] = c + dc;
+                    numAlvos++;
+                }
+        } else if (jDirecao == '<') {
+            for (dc = -1; dc >= -2; dc--)
+                for (dl = -1; dl <= 1; dl++) {
+                    alvos[numAlvos][0] = l + dl;
+                    alvos[numAlvos][1] = c + dc;
+                    numAlvos++;
+                }
+        } else { /* '>' */
+            for (dc = 1; dc <= 2; dc++)
+                for (dl = -1; dl <= 1; dl++) {
+                    alvos[numAlvos][0] = l + dl;
+                    alvos[numAlvos][1] = c + dc;
+                    numAlvos++;
+                }
+        }
+
+    /* === ARCO: 4 celulas em linha === */
+    } else if (jArma == 2) {
+        dl = 0; dc = 0;
+        if      (jDirecao == '^') dl = -1;
+        else if (jDirecao == 'v') dl =  1;
+        else if (jDirecao == '<') dc = -1;
+        else                      dc =  1;
+
+        for (dist = 1; dist <= 4; dist++) {
+            alvos[numAlvos][0] = l + dl * dist;
+            alvos[numAlvos][1] = c + dc * dist;
+            numAlvos++;
+        }
+
+    /* === CAJADO: 8 celulas ao redor === */
+    } else if (jArma == 3) {
+        /* Todos os 8 offsets possiveis (ortogonais + diagonais) */
+        int off[8][2] = {
+            {-1,-1},{-1,0},{-1,1},
+            { 0,-1},       { 0,1},
+            { 1,-1},{ 1,0},{ 1,1}
+        };
+        for (k = 0; k < 8; k++) {
+            alvos[numAlvos][0] = l + off[k][0];
+            alvos[numAlvos][1] = c + off[k][1];
+            numAlvos++;
+        }
+    }
+
+    /* === Aplica o dano em cada celula atingida === */
+    int acertou = 0;
+    int a, m;
+
+    for (a = 0; a < numAlvos; a++) {
+        int al = alvos[a][0];
+        int ac = alvos[a][1];
+
+        /* Ignora celulas fora dos limites do mapa */
+        if (al < 0 || al >= linhas || ac < 0 || ac >= colunas)
+            continue;
+
+        /* Destroi caixa */
+        if (mapa[al][ac] == 'k') {
+            mapa[al][ac] = ' ';
+            printf("\n  [+] Caixa destruida!\n");
+            acertou = 1;
+        }
+
+        /* Elimina monstro vivo nessa posicao */
+        for (m = 0; m < numMonstros; m++) {
+            if (mVivo[m] && mLinha[m] == al && mColuna[m] == ac) {
+                mVivo[m] = 0;
+                if (mTipo[m] == 3)
+                    printf("\n  [!!!] BOSS DERROTADO!\n");
+                else
+                    printf("\n  [+] Monstro eliminado!\n");
+                acertou = 1;
+            }
+        }
+    }
+
+    if (!acertou)
+        printf("\n  [!] Ataque no vazio...\n");
+}
+
+/* -------------------------------------------------------
+   moverMonstros()
+   Move todos os monstros vivos e verifica colisao com o jogador.
+
+   Para cada monstro, calculamos a nova posicao conforme o tipo:
+
+   TIPO 1 (X) - Aleatorio:
+     rand() % 4 gera um numero entre 0 e 3.
+     Cada numero mapeia para uma das 4 direcoes.
+     O monstro ignora obstaculos e o jogador ao escolher
+     a direcao (mas so se move se a celula estiver livre).
+
+   TIPO 2 (Y) - Perseguicao simples:
+     Calcula dL = jLinha  - mLinha[m]  (diferenca vertical)
+             dC = jColuna - mColuna[m] (diferenca horizontal)
+     Move 1 passo na direcao com maior diferenca absoluta.
+     Nao desvia de obstaculos (conforme o enunciado).
+
+   TIPO 3 (Z) - Boss:
+     Comportamento UNICO: na maioria dos turnos persegue normalmente.
+     A cada 5 turnos TELEPORTA para uma posicao aleatoria
+     no raio 3 do jogador, forcando o jogador a reagir.
+
+   Apos calcular novaL e novaC, so move se:
+     - Estiver dentro do mapa
+     - A celula for espaco vazio (' ')
+     - Nao houver outro monstro la
+
+   Retorna 1 se houve colisao com o jogador (perde vida).
+*/
+int moverMonstros(char mapa[][MAX_C], int linhas, int colunas) {
+    int m;
+
+    for (m = 0; m < numMonstros; m++) {
+        if (!mVivo[m]) continue;  /* Pula monstros mortos */
+
+        int novaL = mLinha[m];
+        int novaC = mColuna[m];
+        int dL, dC, dir, tl, tc, tentativas, teleportou;
+
+        /* --- TIPO 1: Aleatorio --- */
+        if (mTipo[m] == 1) {
+            dir = rand() % 4;
+            if      (dir == 0) novaL--;
+            else if (dir == 1) novaL++;
+            else if (dir == 2) novaC--;
+            else               novaC++;
+        }
+
+        /* --- TIPO 2: Perseguicao simples --- */
+        else if (mTipo[m] == 2) {
+            dL = jLinha  - mLinha[m];
+            dC = jColuna - mColuna[m];
+            /* Avanca na direcao de maior distancia */
+            if (abs(dL) >= abs(dC))
+                novaL += (dL > 0) ? 1 : -1;
+            else
+                novaC += (dC > 0) ? 1 : -1;
+        }
+
+        /* --- TIPO 3: Boss com teleporte --- */
+        else if (mTipo[m] == 3) {
+            turnosBoss++;
+
+            if (turnosBoss % 5 == 0) {
+                /* Teleporte para posicao aleatoria perto do jogador */
+                printf("\n  [!!!] MALACHAR TELEPORTOU!\n");
+                tentativas = 25;
+                teleportou = 0;
+
+                while (tentativas-- > 0 && !teleportou) {
+                    /* Offset de -3 a +3 em cada eixo */
+                    tl = jLinha  + (rand() % 7) - 3;
+                    tc = jColuna + (rand() % 7) - 3;
+
+                    if (tl > 0 && tl < linhas - 1 &&
+                        tc > 0 && tc < colunas - 1 &&
+                        mapa[tl][tc] == ' '         &&
+                        !temMonstroEm(tl, tc)        &&
+                        !(tl == jLinha && tc == jColuna)) {
+                        novaL = tl;
+                        novaC = tc;
+                        teleportou = 1;
+                    }
+                }
+                /* Se nao achou celula valida, fica parado */
+                if (!teleportou) {
+                    novaL = mLinha[m];
+                    novaC = mColuna[m];
+                }
+            } else {
+                /* Perseguicao normal nos outros turnos */
+                dL = jLinha  - mLinha[m];
+                dC = jColuna - mColuna[m];
+                if (abs(dL) >= abs(dC))
+                    novaL += (dL > 0) ? 1 : -1;
+                else
+                    novaC += (dC > 0) ? 1 : -1;
+            }
+        }
+
+        /* Valida a nova posicao antes de mover */
+        if (novaL >= 0 && novaL < linhas  &&
+            novaC >= 0 && novaC < colunas &&
+            mapa[novaL][novaC] == ' '     &&
+            !temMonstroEm(novaL, novaC)) {
+            mLinha[m]  = novaL;
+            mColuna[m] = novaC;
+        }
+
+        /* Verifica colisao com o jogador apos mover */
+        if (mLinha[m] == jLinha && mColuna[m] == jColuna) {
+            jVidas--;
+            printf("\n  [!!] Um monstro te tocou! Vidas: %d\n", jVidas);
+            return 1;  /* Sinaliza perda de vida */
+        }
+    }
+
+    return 0;  /* Nenhuma colisao */
+}
+
+/* -------------------------------------------------------
+   contarMonstrosVivos()
+   Percorre mVivo[] e retorna a contagem de vivos.
+*/
+int contarMonstrosVivos() {
+    int total = 0, i;
+    for (i = 0; i < numMonstros; i++)
+        if (mVivo[i]) total++;
+    return total;
+}
+
+/* -------------------------------------------------------
+   bossEstaVivo()
+   Retorna 1 se o monstro de tipo 3 (boss) ainda esta vivo.
+   Usado no Andar 3 para checar a condicao de vitoria.
+*/
+int bossEstaVivo() {
+    int i;
+    for (i = 0; i < numMonstros; i++)
+        if (mTipo[i] == 3 && mVivo[i])
+            return 1;
+    return 0;
+}
+
+/* -------------------------------------------------------
+   escanearMonstros()
+   Percorre o mapa procurando X, Y e Z.
+   Para cada simbolo encontrado:
+     1. Registra nos arrays paralelos (mLinha, mColuna, mTipo, mVivo)
+     2. Remove o caractere do mapa (substitui por ' ')
+
+   Por que remover do mapa?
+   Os monstros sao gerenciados pelos arrays.
+   Se deixassemos no mapa tambem, apareceriam duplicados
+   na exibicao. As funcoes desenharMonstros e
+   limparMonstrosDoMapa os inserem e removem temporariamente
+   somente na hora de imprimir.
+*/
+void escanearMonstros(char mapa[][MAX_C], int linhas, int colunas) {
+    int i, j;
+    numMonstros = 0;
+    turnosBoss  = 0;
+
+    for (i = 0; i < linhas; i++) {
+        for (j = 0; j < colunas; j++) {
+            char c = mapa[i][j];
+            if (c == 'X' || c == 'Y' || c == 'Z') {
+                mLinha[numMonstros]  = i;
+                mColuna[numMonstros] = j;
+                mTipo[numMonstros]   = (c == 'X') ? 1 : (c == 'Y') ? 2 : 3;
+                mVivo[numMonstros]   = 1;
+                numMonstros++;
+                mapa[i][j] = ' ';  /* Remove do mapa */
+            }
+        }
+    }
+}
+
+/* -------------------------------------------------------
+   desenharMonstros() e limparMonstrosDoMapa()
+   Par de funcoes usadas em torno de exibirMapa():
+
+     desenharMonstros  -> insere simbolos dos monstros no array
+     exibirMapa        -> imprime o array (monstros aparecem)
+     limparMonstrosDoMapa -> remove os simbolos do array
+
+   Isso garante que o array do mapa sempre reflita
+   apenas o "chao" da fase, e os monstros so aparecem
+   na exibicao, sem corromper o estado persistente do mapa.
+*/
+void desenharMonstros(char mapa[][MAX_C]) {
+    int m;
+    for (m = 0; m < numMonstros; m++) {
+        if (!mVivo[m]) continue;
+        char s = (mTipo[m] == 1) ? 'X' : (mTipo[m] == 2) ? 'Y' : 'Z';
+        mapa[mLinha[m]][mColuna[m]] = s;
+    }
+}
+
+void limparMonstrosDoMapa(char mapa[][MAX_C]) {
+    int m;
+    for (m = 0; m < numMonstros; m++) {
+        if (!mVivo[m]) continue;
+        mapa[mLinha[m]][mColuna[m]] = ' ';
+    }
+}
+
+/* ===========================================================
+   [6] FUNCOES DE INICIALIZACAO DOS MAPAS
+   ===========================================================
+
+   Cada funcao define o layout de sua fase como um array
+   de strings literais (const char *t[]).
+
+   strncpy() copia cada string para o array global do mapa.
+   Fazemos a copia duas vezes: uma para o mapa ATIVO e
+   outra para o mapa ORIGINAL (backup para reset de fase).
+
+   LEGENDA:
+     *  parede      #  espinho   k  caixa
+     O  botao       D  porta     @  chave
+     =  aberta      L  escada    N  NPC
+     X  monstro1    Y  monstro2  Z  boss
+     (espaco) = chao livre
+*/
+
+/* -------------------------------------------------------
+   inicializarVila() — Mapa 10x10
+   Contem o NPC (N) para escolha de arma
+   e a escada (L) que leva para o Andar 1.
+*/
+void inicializarVila() {
+    int i;
+    const char *t[VILA_L] = {
+        "**********",
+        "*        *",
+        "*  N     *",
+        "*        *",
+        "*  ****  *",
+        "*        *",
+        "*  ****  *",
+        "*        *",
+        "*       L*",
+        "**********"
+    };
+    for (i = 0; i < VILA_L; i++) {
+        strncpy(mapaVila[i],     t[i], VILA_C);
+        mapaVila[i][VILA_C] = '\0';
+        strncpy(mapaVilaOrig[i], t[i], VILA_C);
+        mapaVilaOrig[i][VILA_C] = '\0';
+    }
+    jLinha   = 1;
+    jColuna  = 1;
+    jDirecao = '>';
+    jChaves  = 0;
+}
+
+/* -------------------------------------------------------
+   inicializarAndar1() — Mapa 10x10
+   Tutorial das mecanicas basicas:
+     - Chave (@) e porta fechada (D): ensina abrir portas
+     - Caixas (k): ensina a destruir com ataque
+     - Escada (L): so acessivel apos abrir a porta
+*/
+void inicializarAndar1() {
+    int i;
+    const char *t[A1_L] = {
+        "**********",
+        "*>  k    *",
+        "*   k    *",
+        "* *** D L*",
+        "* * @    *",
+        "* *   ** *",
+        "* *      *",
+        "* ****   *",
+        "*        *",
+        "**********"
+    };
+    for (i = 0; i < A1_L; i++) {
+        strncpy(mapaA1[i],     t[i], A1_C);
+        mapaA1[i][A1_C] = '\0';
+        strncpy(mapaA1Orig[i], t[i], A1_C);
+        mapaA1Orig[i][A1_C] = '\0';
+    }
+}
+
+/* -------------------------------------------------------
+   inicializarAndar2() — Mapa 15x15
+   Apresenta espinhos (#), botao (O) e Monstro Tipo 1 (X).
+   Desafio: 2 chaves, 2 portas, espinhos e monstros aleatorios.
+   O botao abre uma passagem secreta no centro do mapa.
+*/
+void inicializarAndar2() {
+    int i;
+    const char *t[A2_L] = {
+        "***************",
+        "*>            *",
+        "* **** D @    *",
+        "* *    *      *",
+        "* * ## *  D @ *",
+        "* *    *      *",
+        "* **** * **** *",
+        "*      O      *",
+        "* ****   **** *",
+        "*      X      *",
+        "* #### * #### *",
+        "*      X      *",
+        "* ****   **** *",
+        "*            L*",
+        "***************"
+    };
+    for (i = 0; i < A2_L; i++) {
+        strncpy(mapaA2[i],     t[i], A2_C);
+        mapaA2[i][A2_C] = '\0';
+        strncpy(mapaA2Orig[i], t[i], A2_C);
+        mapaA2Orig[i][A2_C] = '\0';
+    }
+}
+
+/* -------------------------------------------------------
+   inicializarAndar3() — Mapa 25x25
+   Grande desafio final. Integra todos os elementos.
+   Contem: 3 chaves, 3 portas, espinhos, caixas,
+   Monstros Y (perseguicao), Boss Z (teleporte),
+   e um botao que invoca monstros extras.
+*/
+void inicializarAndar3() {
+    int i;
+    const char *t[A3_L] = {
+        "*************************",
+        "*>          @           *",
+        "* ******* D * *******   *",
+        "* *           *     *   *",
+        "* * ####### * * D@  *   *",
+        "* *         * *     *   *",
+        "* ******* * * ******* * *",
+        "*           *         * *",
+        "* *** ##### * ******* * *",
+        "* *   #   # *       * * *",
+        "* * Y # @ # *   Y   * * *",
+        "* *   #   # *       * * *",
+        "* *** ##### *  **** * * *",
+        "*           *  *    *   *",
+        "* ######### * D* k  *   *",
+        "*           *  *    *   *",
+        "* *** *** * * @* k  * * *",
+        "* *   * * * *  ******* * *",
+        "* * k * * * *         * *",
+        "* *   * *   * ******* * *",
+        "* *** * * * *   Z   * * *",
+        "*       * * * ***** * * *",
+        "*   Y   *   *       *   *",
+        "*             X   X    L*",
+        "*************************"
+    };
+    for (i = 0; i < A3_L; i++) {
+        strncpy(mapaA3[i],     t[i], A3_C);
+        mapaA3[i][A3_C] = '\0';
+        strncpy(mapaA3Orig[i], t[i], A3_C);
+        mapaA3Orig[i][A3_C] = '\0';
+    }
+}
+
+/* ===========================================================
+   [7] FUNCOES DE CADA FASE
+   ===========================================================
+*/
+
+/* -------------------------------------------------------
+   reiniciarFase()
+   Restaura o mapa ao estado original e reposiciona o jogador.
+   Chamada sempre que o jogador perde uma vida.
+
+   strncpy(mapa[i], orig[i], ...) copia cada linha do
+   backup de volta para o mapa ativo, desfazendo todas
+   as alteracoes feitas durante a tentativa.
+*/
+void reiniciarFase(char mapa[][MAX_C], char orig[][MAX_C],
+                   int linhas, int colunas,
+                   int lIni, int cIni) {
+    int i;
+    for (i = 0; i < linhas; i++)
+        strncpy(mapa[i], orig[i], colunas + 1);
+
+    jLinha   = lIni;
+    jColuna  = cIni;
+    jDirecao = '>';
+    jChaves  = 0;
+
+    /* Re-escaneia: os monstros voltam as posicoes originais */
+    escanearMonstros(mapa, linhas, colunas);
+}
+
+/* -------------------------------------------------------
+   Efeitos dos botoes de cada fase.
+
+   efeitoBotaoA2: abre uma passagem no centro do Andar 2.
+   efeitoBotaoA3: invoca dois monstros extras perto do boss.
+*/
+void efeitoBotaoA2(char mapa[][MAX_C]) {
+    if (mapa[7][7] == '*') mapa[7][7] = ' ';
+    if (mapa[7][6] == '*') mapa[7][6] = ' ';
+    printf("\n  [!] Uma passagem secreta se abriu!\n");
+}
+
+void efeitoBotaoA3(char mapa[][MAX_C]) {
+    (void)mapa;  /* Nao usamos o mapa neste efeito */
+    if (numMonstros < MAX_MONSTROS - 1) {
+        mLinha[numMonstros]  = 21;
+        mColuna[numMonstros] = 5;
+        mTipo[numMonstros]   = 2;
+        mVivo[numMonstros]   = 1;
+        numMonstros++;
+
+        mLinha[numMonstros]  = 21;
+        mColuna[numMonstros] = 8;
+        mTipo[numMonstros]   = 2;
+        mVivo[numMonstros]   = 1;
+        numMonstros++;
+    }
+    printf("\n  [!!] Armadilha! Novos inimigos surgiram!\n");
+}
+
+/* -------------------------------------------------------
+   loopFase()
+   O nucleo do jogo: loop principal de uma fase de masmorra.
+
+   Executa indefinidamente ate uma de tres condicoes:
+     -> Retorna 0: jogador ficou sem vidas (Game Over)
+     -> Retorna 1: chegou na escada (proxima fase)
+     -> Retorna 2: boss derrotado (vitoria, so Andar 3)
+
+   A cada iteracao do loop:
+     1. Checa vitoria (boss morto)
+     2. Aplica efeito de botao se pressionado
+     3. Limpa tela e exibe HUD + mapa
+     4. Le comando do jogador
+     5. Executa acao (mover / interagir / atacar)
+     6. Move os monstros
+     7. Trata perda de vida (reinicia fase se necessario)
+
+   Parametros:
+     mapa, orig      -> mapa ativo e backup
+     linhas, cols    -> dimensoes
+     lIni, cIni      -> posicao inicial do jogador
+     nome            -> nome da fase (exibido no cabecalho)
+     temBoss         -> 1 se deve checar vitoria por boss
+     efeitoBotao     -> ponteiro para funcao do efeito do botao
+                        (cada fase passa a sua propria funcao)
+*/
+int loopFase(char mapa[][MAX_C], char orig[][MAX_C],
+             int linhas, int cols,
+             int lIni, int cIni,
+             const char *nome, int temBoss,
+             void (*efeitoBotao)(char[][MAX_C])) {
+
+    jLinha   = lIni;
+    jColuna  = cIni;
+    jDirecao = '>';
+    jChaves  = 0;
+
+    escanearMonstros(mapa, linhas, cols);
+
+    int botaoAtivado = 0;
+
+    while (1) {
+
+        /* --- Condicao de vitoria: boss morto --- */
+        if (temBoss && !bossEstaVivo())
+            return 2;
+
+        /* --- Efeito do botao (executa apenas uma vez) ---
+           efeitoBotao e um ponteiro de funcao.
+           efeitoBotao != NULL garante que existe uma funcao.
+           Depois de executar, zeramos o ponteiro para nao
+           rodar de novo nas proximas iteracoes. */
+        if (botaoAtivado && efeitoBotao != NULL) {
+            efeitoBotao(mapa);
+            efeitoBotao = NULL;
+        }
+
+        /* --- Exibicao --- */
+        limparTela();
+        exibirHUD();
+        if (temBoss)
+            printf("  === %s === [Boss: %s]\n",
+                   nome, bossEstaVivo() ? "VIVO" : "MORTO");
+        else
+            printf("  === %s === [Monstros: %d]\n",
+                   nome, contarMonstrosVivos());
+
+        desenharMonstros(mapa);
+        exibirMapa(mapa, linhas, cols);
+        limparMonstrosDoMapa(mapa);
+
+        /* --- Input --- */
+        printf("  Comando (w/a/s/d/i/o): ");
+        char cmd = lerChar();
+
+        int dl = 0, dc = 0;
+        char dir = jDirecao;
+        int resultado = 0;
+
+        if      (cmd == 'w') { dl = -1; dir = '^'; }
+        else if (cmd == 's') { dl =  1; dir = 'v'; }
+        else if (cmd == 'a') { dc = -1; dir = '<'; }
+        else if (cmd == 'd') { dc =  1; dir = '>'; }
+
+        else if (cmd == 'i') {
+            interagir(mapa, linhas, cols, &botaoAtivado);
+            pausar();
+            continue;
+        }
+
+        else if (cmd == 'o') {
+            atacar(mapa, linhas, cols);
+            /* Monstros tambem se movem apos o ataque */
+            resultado = moverMonstros(mapa, linhas, cols);
+            if (resultado) {
+                if (jVidas <= 0) { pausar(); return 0; }
+                pausar();
+                reiniciarFase(mapa, orig, linhas, cols, lIni, cIni);
+                botaoAtivado = 0;
+            } else {
+                pausar();
+            }
+            continue;
+        }
+
+        else {
+            printf("\n  [!] Comando invalido. Use w/a/s/d/i/o\n");
+            pausar();
+            continue;
+        }
+
+        /* --- Movimento do jogador --- */
+        resultado = moverJogador(mapa, linhas, cols, dl, dc, dir);
+
+        if (resultado == 1) {
+            /* Morreu */
+            if (jVidas <= 0) { pausar(); return 0; }
+            pausar();
+            reiniciarFase(mapa, orig, linhas, cols, lIni, cIni);
+            botaoAtivado = 0;
+            continue;
+        }
+        if (resultado == 2)
+            return 1;  /* Escada: proximo andar */
+
+        /* --- Monstros se movem apos o jogador --- */
+        resultado = moverMonstros(mapa, linhas, cols);
+        if (resultado) {
+            if (jVidas <= 0) { pausar(); return 0; }
+            pausar();
+            reiniciarFase(mapa, orig, linhas, cols, lIni, cIni);
+            botaoAtivado = 0;
+        }
+    }
+}
+
+/* -------------------------------------------------------
+   escolherArma()
+   Menu de selecao de arma. Chamada quando o jogador
+   interage com o NPC na Vila.
+*/
+void escolherArma() {
+    limparTela();
+    printf("  ===== FERREIRO DA VILA =====\n\n");
+    printf("  'Guerreiro! Escolha sua arma com sabedoria.'\n\n");
+    printf("  1. Espada        - Ataca bloco 3x2 a frente\n");
+    printf("  2. Arco e Flecha - Ataca 4 celulas em linha reta\n");
+    printf("  3. Cajado        - Ataca as 8 celulas ao redor\n\n");
+    printf("  Sua escolha (1-3): ");
+
+    int escolha = 0;
+    while (escolha < 1 || escolha > 3) {
+        escolha = lerInt();
+        if (escolha < 1 || escolha > 3)
+            printf("  Opcao invalida. Escolha 1, 2 ou 3: ");
+    }
+
+    jArma = escolha;
+
+    const char *nomes[] = { "", "Espada", "Arco e Flecha", "Cajado" };
+    printf("\n  Voce equipou: %s!\n\n", nomes[escolha]);
+    pausar();
+}
+
+/* -------------------------------------------------------
+   faseVila()
+   Loop da Vila. Sem monstros. O jogador deve:
+     1. Falar com o NPC (N) para escolher a arma
+     2. Usar a escada (L) para entrar na masmorra
+
+   Se tentar entrar sem arma, o jogo bloqueia e avisa.
+*/
+void faseVila() {
+    inicializarVila();
+
+    while (1) {
+        limparTela();
+        exibirHUD();
+        printf("  === VILA DE ARENDOR ===\n");
+        printf("  Fale com o NPC (N) para escolher sua arma.\n");
+        printf("  Entre pela escada (L) para avancar.\n\n");
+
+        exibirMapa(mapaVila, VILA_L, VILA_C);
+
+        printf("  Comando (w/a/s/d/i): ");
+        char cmd = lerChar();
+
+        int dl = 0, dc = 0;
+        char dir = jDirecao;
+
+        if      (cmd == 'w') { dl = -1; dir = '^'; }
+        else if (cmd == 's') { dl =  1; dir = 'v'; }
+        else if (cmd == 'a') { dc = -1; dir = '<'; }
+        else if (cmd == 'd') { dc =  1; dir = '>'; }
+        else if (cmd == 'i') {
+            int fl, fc;
+            celulaDaFrente(&fl, &fc);
+
+            if (fl >= 0 && fl < VILA_L && fc >= 0 && fc < VILA_C
+                && mapaVila[fl][fc] == 'N') {
+                if (jArma == 0)
+                    escolherArma();
+                else {
+                    printf("\n  [!] Voce ja tem uma arma equipada!\n");
+                    pausar();
+                }
+            } else {
+                int dummy = 0;
+                interagir(mapaVila, VILA_L, VILA_C, &dummy);
+                pausar();
+            }
+            continue;
+        }
+
+        if (dl != 0 || dc != 0) {
+            int res = moverJogador(mapaVila, VILA_L, VILA_C, dl, dc, dir);
+            if (res == 2) {
+                if (jArma == 0) {
+                    printf("\n  [!] Fale com o NPC antes de entrar!\n");
+                    jLinha  -= dl;
+                    jColuna -= dc;
+                    pausar();
+                } else {
+                    return;  /* Sai da Vila */
+                }
+            }
+        }
+    }
+}
+
+/* ===========================================================
+   [8] MAIN
+   ===========================================================
+
+   Ponto de entrada do programa. O compilador comeca aqui.
+
+   srand(time(NULL)):
+     "Semeia" o gerador de numeros aleatorios com o
+     horario atual. Sem isso, rand() geraria a mesma
+     sequencia toda vez que o jogo fosse aberto.
+
+   O while(1) e o loop principal do menu.
+   Ele so termina quando o jogador escolhe "Sair" (break).
+
+   Fluxo da opcao Jogar:
+     1. Inicializa dados do jogador
+     2. Fase: Vila (escolha de arma)
+     3. Fase: Andar 1 -> verifica retorno
+     4. Fase: Andar 2 -> verifica retorno
+     5. Fase: Andar 3 -> verifica retorno (vitoria ou game over)
+*/
+int main() {
+    srand((unsigned int)time(NULL));
+
+    while (1) {
+        exibirMenu();
+        char opcao = lerChar();
+
+        /* ======= OPCAO 1: JOGAR ======= */
+        if (opcao == '1') {
+
+            /* Inicializa o jogador do zero */
+            jVidas   = 3;
+            jArma    = 0;
+            jChaves  = 0;
+            jDirecao = '>';
+            jLinha   = 1;
+            jColuna  = 1;
+
+            /* Fase: Vila */
+            faseVila();
+
+            /* Fase: Andar 1 */
+            inicializarAndar1();
+            int res = loopFase(
+                mapaA1, mapaA1Orig, A1_L, A1_C, 1, 1,
+                "ANDAR 1 - Entrada da Masmorra", 0, NULL
+            );
+            if (res == 0) { exibirGameOver(); continue; }
+
+            /* Fase: Andar 2 */
+            inicializarAndar2();
+            res = loopFase(
+                mapaA2, mapaA2Orig, A2_L, A2_C, 1, 1,
+                "ANDAR 2 - Corredor dos Espinhos", 0, efeitoBotaoA2
+            );
+            if (res == 0) { exibirGameOver(); continue; }
+
+            /* Fase: Andar 3 */
+            inicializarAndar3();
+            res = loopFase(
+                mapaA3, mapaA3Orig, A3_L, A3_C, 1, 1,
+                "ANDAR 3 - Camara de Malachar", 1, efeitoBotaoA3
+            );
+            if (res == 0) exibirGameOver();
+            else          exibirVitoria();
+
+        /* ======= OPCAO 2: TUTORIAL ======= */
+        } else if (opcao == '2') {
+            exibirTutorial();
+
+        /* ======= OPCAO 3: SAIR ======= */
+        } else if (opcao == '3') {
+            limparTela();
+            printf("\n  ===== CREDITOS =====\n\n");
+            printf("  Desenvolvido por:\n");
+            printf("    * [SEU NOME AQUI]\n");
+            printf("    * [INTEGRANTE 2]\n");
+            printf("    * [INTEGRANTE 3]\n\n");
+            printf("  Obrigado por jogar DUNGEON CRAWLER!\n\n");
+            break;
+
+        } else {
+            printf("\n  [!] Opcao invalida!\n");
+            pausar();
+        }
+    }
+
+    return 0;
+}
