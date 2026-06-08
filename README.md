@@ -1,20 +1,20 @@
-# 🗡️ Dungeon Crawler
+# Dungeon Crawler
 
 > Jogo de console em linguagem C com perspectiva top-down ASCII. Explore uma vila, atravesse três andares de masmorra e derrote o Boss final para salvar o reino de Arendor.
 
 ---
 
-## 👥 Desenvolvedores
+Desenvolvedores
 
 | Nome | Matrícula |
 |------|-----------|
-| [Seu Nome Aqui] | 000000 |
-| [Integrante 2]  | 000000 |
-| [Integrante 3]  | 000000 |
+| Isac Lopes | 26070073 |
+| Henrique Dutra | 26070041 |
+| Manoel Folha | 26070019 |
 
 ---
 
-## 📖 História
+# História
 
 O reino de Arendor foi consumido pelas trevas. Criaturas sombrias emergiram das profundezas da **Masmorra das Sombras**, destruindo tudo ao seu redor. O guerreiro **Kael**, último sobrevivente da Ordem da Luz, é a única esperança do reino.
 
@@ -29,7 +29,7 @@ Somente derrotando o **Boss Malachar** a escuridão será dissipada e o reino po
 
 ---
 
-## 🎮 Como Jogar
+## Como Jogar
 
 ### Objetivo
 Avance pelos três andares da masmorra, resolva os desafios de cada fase e derrote o Boss Final no terceiro andar.
@@ -91,7 +91,7 @@ Menu Principal
 
 ---
 
-## 👹 Boss Final — Malachar
+## Boss Final — Malachar
 
 Malachar é o inimigo final do jogo e possui um comportamento **completamente diferente** dos monstros comuns, com dois modos que alternam automaticamente a cada turno.
 
@@ -159,31 +159,10 @@ A combinação de perseguição constante com teleportes imprevisíveis força o
 
 ---
 
-## 🖥️ Como Compilar e Executar
-
-### Pré-requisitos
-- Compilador GCC instalado
-
-### Linux / Mac
-```bash
-gcc -o dungeon dungeon.c
-./dungeon
-```
-
-### Windows
-```bash
-gcc -o dungeon.exe dungeon.c
-dungeon.exe
-```
-
----
-
-## 🤖 Declaração sobre Uso de IA Generativa
+## Declaração sobre Uso de IA Generativa
 
 Este projeto utilizou **IA generativa (Claude — Anthropic)** como ferramenta de apoio ao desenvolvimento, nos seguintes aspectos:
 
 - **Estruturação do código:** a IA sugeriu a organização em blocos e funções separadas, que foi compreendida, adaptada e aprovada pela equipe
 - **Revisão de lógica:** trechos de lógica (movimento do jogador, IA dos monstros) foram discutidos com a IA para entender o raciocínio por trás das implementações
 - **Depuração:** a IA auxiliou na identificação de erros de compilação e na explicação do que cada mensagem de erro significava
-
-> ⚠️ Todo o código entregue foi **lido, compreendido e validado** por todos os integrantes da equipe. Nenhum trecho foi inserido sem que o grupo entendesse seu funcionamento.
